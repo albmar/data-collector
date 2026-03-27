@@ -48,23 +48,52 @@ class Contract {
   }
 }
 
+class Histogram {
+  values = new Map<number, number>();
+  totalCount = 0;
+  totalAmount = 0;
+
+  add(amount: number) {
+    let count = this.values.get(amount);
+    count = count === undefined ? 1 : count + 1;
+    this.values.set(amount, count);
+    this.totalCount += 1;
+    this.totalAmount += amount;
+  }
+
+  merge(hist?: Histogram) {
+    if (!hist) return;
+    for (const [amount, newCount] of hist.values.entries()) {
+      let count = this.values.get(amount);
+      count = count === undefined ? newCount : count + newCount;
+      this.values.set(amount, count);
+    }
+    this.totalCount += hist.totalCount;
+    this.totalAmount += hist.totalAmount;
+  }
+}
+
 class Gacha {
-  count: number = 0;
   id: bigint;
-  itemCounts = new Map<ItemId, number>();
+  count: number = 0;
+  itemHistograms = new Map<ItemId, Histogram>();
 
   constructor(id: bigint) {
     this.id = id;
   }
 
   add(id: ItemId, amount: number) {
-    this.itemCounts.set(id, amount);
+    let hist = this.itemHistograms.get(id);
+    if (hist === undefined) {
+      hist = new Histogram();
+    }
+    hist.add(amount);
   }
 }
 
 class GachaResult {
   count: number = 0;
-  itemCounts = new Map<ItemId, number>();
+  itemHistograms = new Map<ItemId, Histogram>();
 }
 
 class ReloadState {
@@ -81,7 +110,7 @@ class DataCollector implements HotReloadable<ReloadState> {
   listener: EventEmitter;
   recipes: Map<RecipeId, DBElement> = new Map();
 
-  usedItem: ItemId;
+  usedItem: ItemId | null = null;
   production: Production | null = null;
   contract: Contract | null = null;
   gacha: Gacha | null = null;
@@ -183,7 +212,7 @@ class DataCollector implements HotReloadable<ReloadState> {
     // S_REQUEST_CONTRACT
     // S_GACHA_START
     this.mod.hook("S_GACHA_START", "*", (event: S_GACHA_START_2) => {
-      if (this.usedItem) {
+      if (this.usedItem && this.contract) {
         let itemData = this.mod.game.data.items.get(this.usedItem);
         if (itemData?.combatItemType.toString() == "GACHA") {
           this.gacha = new Gacha(this.contract.id);
@@ -206,16 +235,17 @@ class DataCollector implements HotReloadable<ReloadState> {
     });
     // C_GACHA_CANCEL id
     this.mod.hook("C_GACHA_CANCEL", "*", (event: C_GACHA_CANCEL_1) => {
-      if (this.gacha) {
+      if (this.gacha && this.usedItem) {
         let result = this.gachaResults.get(this.usedItem);
         if (result === undefined) {
           result = new GachaResult();
           this.gachaResults.set(this.usedItem, result);
         }
         result.count += this.gacha.count;
-        for (let [itemId, count] of this.gacha.itemCounts) {
-          let current = result.itemCounts.get(itemId) ?? 0;
-          result.itemCounts.set(itemId, current + count);
+        for (let [itemId, newHist] of this.gacha.itemHistograms) {
+          let hist = result.itemHistograms.get(itemId);
+          newHist.merge(hist);
+          result.itemHistograms.set(itemId, newHist);
         }
       }
       this.gacha = null;
