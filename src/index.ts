@@ -425,9 +425,10 @@ class DataCollector implements HotReloadable<ReloadState> {
         const namedItemId = recipe.recipeItemId;
         recipeName = this.mod.game.data.items.get(namedItemId)?.name ?? "";
       }
-      let percentage = ((result.countCritical * 100) / result.count).toFixed(0);
+      const percentage = (result.countCritical * 100) / result.count;
+      const fractionDigits = Math.min(2.5 - Math.log10(percentage), 3);
       this.mod.command.message(
-        `${recipeName} (${recipeId}): ${result.countCritical} / ${result.count} = ${percentage}%`,
+        `${recipeName} (${recipeId}): ${result.countCritical} / ${result.count} = ${percentage.toFixed(fractionDigits)}%`,
       );
     }
   }
