@@ -1,0 +1,11 @@
+{
+  "files": {
+    "dist/dbTypes.js": "d43aa81f5bc89faa359e0f97c814ba25155591ff078fbb9bfd40f8c7c9683230",
+    "dist/index.js": "81b8cfa6971e2063c1e81685a45b6ef2a95fa992280a4fe043e2ae6cc451bd0f",
+    "dist/libraryInterface.js": "90e1d19eea4d2bd670a60138e8b32a310e5fccead20385cc833b00d16fd36ff0",
+    "module.config.json": "c0a16dfca2dc00eb2f4c5670a98fcc163fd4f85c34b04fe825e6c3e79de88ca1",
+    "module.json": "cfb700fdd06dfe56618469599d4347e8c5d64b7ad7a2291c380917239e385152",
+    "package-lock.json": "7b26bc0591a6264ab10c51e143e57e0a091806a5b087b9717fad98b4f17e1201",
+    "package.json": "1ab697fab813de5968b1ddf63876e8fbe3e64ae04c73ffaf09fcb7e03fb98991"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "data-collector",
+  "author": "albmar",
+  "description": "Collects data",
+  "version": "0.0.1",
+  "options": {
+    "niceName": "Data Collector",
+    "reloadable": true
+  },
+  "servers": [],
+  "supportUrl": ""
+}
