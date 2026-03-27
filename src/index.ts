@@ -8,9 +8,12 @@ import {
 import { LibraryIndex } from "./libraryInterfaces";
 import { EventEmitter } from "stream";
 import {
+  C_GACHA_CANCEL_1,
   C_START_PRODUCE_1,
   C_USE_ITEM_3,
   S_END_PRODUCE_1,
+  S_GACHA_END_5,
+  S_GACHA_START_2,
   S_PRODUCE_CRITICAL_1,
   S_SPAWN_DROPITEM_9,
   S_SYSTEM_MESSAGE_LOOT_ITEM_1,
@@ -45,23 +48,51 @@ class Contract {
   }
 }
 
-class ReloadState {
-  results: Map<number, ProductionResult> = new Map();
+class Gacha {
+  count: number = 0;
+  id: bigint;
+  itemCounts = new Map<ItemId, number>();
+
+  constructor(id: bigint) {
+    this.id = id;
+  }
+
+  add(id: ItemId, amount: number) {
+    this.itemCounts.set(id, amount);
+  }
 }
+
+class GachaResult {
+  count: number = 0;
+  itemCounts = new Map<ItemId, number>();
+}
+
+class ReloadState {
+  results: Map<RecipeId, ProductionResult> = new Map();
+  gachaResults: Map<ItemId, GachaResult> = new Map();
+}
+
+type RecipeId = number;
+
+type ItemId = number;
 
 class DataCollector implements HotReloadable<ReloadState> {
   mod: NetworkModInterface<DataCollector, DataCollector, DataCollector>;
   listener: EventEmitter;
-  recipes: Map<number, DBElement> = new Map();
+  recipes: Map<RecipeId, DBElement> = new Map();
 
+  usedItem: ItemId;
   production: Production | null = null;
   contract: Contract | null = null;
+  gacha: Gacha | null = null;
 
-  results: Map<number, ProductionResult> = new Map();
+  results: Map<RecipeId, ProductionResult> = new Map();
+  gachaResults: Map<ItemId, GachaResult> = new Map();
 
   loadState(state: ReloadState): ReloadState {
     if (state) {
       this.results = state.results;
+      this.gachaResults = state.gachaResults;
     }
     return state;
   }
@@ -69,6 +100,7 @@ class DataCollector implements HotReloadable<ReloadState> {
   saveState(): ReloadState {
     let state = new ReloadState();
     state.results = this.results;
+    state.gachaResults = this.gachaResults;
     return state;
   }
 
@@ -146,13 +178,48 @@ class DataCollector implements HotReloadable<ReloadState> {
       this.mod.log(
         `Used ${itemData?.name} of type ${itemData?.combatItemType}`,
       );
+      this.usedItem = event.id;
     });
     // S_REQUEST_CONTRACT
     // S_GACHA_START
+    this.mod.hook("S_GACHA_START", "*", (event: S_GACHA_START_2) => {
+      if (this.usedItem) {
+        let itemData = this.mod.game.data.items.get(this.usedItem);
+        if (itemData?.combatItemType.toString() == "GACHA") {
+          this.gacha = new Gacha(this.contract.id);
+        }
+      }
+    });
     // C_GACHA_TRY id amount Contract.id == Gacha.id
     // S_SYSTEM_MESSAGE_LOOT_ITEM item amount
     // S_GACHA_END boxes
+    this.mod.hook("S_GACHA_END", "*", (event: S_GACHA_END_5) => {
+      if (this.gacha) {
+        for (let boxes of event.boxes.values()) {
+          this.gacha.add(boxes.randomReward.id, boxes.randomReward.amount);
+          for (let fixed of boxes.fixedRewards.values()) {
+            this.gacha.add(fixed.id, fixed.amount);
+          }
+        }
+        this.gacha.count++;
+      }
+    });
     // C_GACHA_CANCEL id
+    this.mod.hook("C_GACHA_CANCEL", "*", (event: C_GACHA_CANCEL_1) => {
+      if (this.gacha) {
+        let result = this.gachaResults.get(this.usedItem);
+        if (result === undefined) {
+          result = new GachaResult();
+          this.gachaResults.set(this.usedItem, result);
+        }
+        result.count += this.gacha.count;
+        for (let [itemId, count] of this.gacha.itemCounts) {
+          let current = result.itemCounts.get(itemId) ?? 0;
+          result.itemCounts.set(itemId, current + count);
+        }
+      }
+      this.gacha = null;
+    });
     // S_CANCEL_CONTRACT id
   }
 
