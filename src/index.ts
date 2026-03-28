@@ -71,6 +71,45 @@ class Histogram {
     this.totalCount += hist.totalCount;
     this.totalAmount += hist.totalAmount;
   }
+
+  min(): number {
+    let min = Infinity;
+    for (const x of this.values.keys()) {
+      min = Math.min(min, x);
+    }
+    return min;
+  }
+
+  max(): number {
+    let max = -Infinity;
+    for (const x of this.values.keys()) {
+      max = Math.max(max, x);
+    }
+    return max;
+  }
+
+  mean(): number {
+    return this.totalAmount / this.totalCount;
+  }
+
+  median(): number {
+    let entries = [...this.values.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .values();
+    let mid = (this.totalCount - 1) / 2;
+    let lowerMid = Math.trunc(mid);
+    let [amount, count] = [0, 0];
+    for ([amount, count] of entries) {
+      if (lowerMid <= count) {
+        break;
+      }
+      lowerMid -= count;
+    }
+    if (lowerMid != mid && lowerMid == count) {
+      return (amount + entries.next()[0]) / 2;
+    }
+    return amount;
+  }
 }
 
 class Gacha {
