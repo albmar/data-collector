@@ -106,7 +106,8 @@ class Histogram {
       lowerMid -= count;
     }
     if (lowerMid != mid && lowerMid == count) {
-      return (amount + entries.next()[0]) / 2;
+      const [nextAmount] = entries.next().value!;
+      return (amount + nextAmount) / 2;
     }
     return amount;
   }
@@ -183,7 +184,11 @@ class DataCollector implements HotReloadable<ReloadState> {
 
     mod.command.add("data", {
       export: this.exportProductionResults.bind(this),
-      results: this.showProductionResults.bind(this),
+      show: {
+        $default: this.showAll.bind(this),
+        production: this.showProductionResults.bind(this),
+        gacha: this.showGachaResults.bind(this),
+      },
       import: this.importProductionResults.bind(this),
       reset: this.resetProductionResults.bind(this),
     });
@@ -455,6 +460,22 @@ class DataCollector implements HotReloadable<ReloadState> {
     return targetPath;
   }
 
+  showGachaResults() {
+    for (const [itemId, result] of this.gachaResults.entries()) {
+      const name = this.mod.game.data.items.get(itemId);
+
+      this.mod.command.message(`${name} (${itemId}):`);
+
+      for (const [itemId, hist] of result.itemHistograms.entries()) {
+        const name = this.mod.game.data.items.get(itemId);
+
+        this.mod.command.message(
+          `- ${name} (${itemId}): min=${hist.min()} mean=${hist.mean()} median=${hist.median()} max=${hist.max()}`,
+        );
+      }
+    }
+  }
+
   showProductionResults() {
     for (const [recipeId, result] of this.results.entries()) {
       let recipeName = "";
@@ -470,6 +491,14 @@ class DataCollector implements HotReloadable<ReloadState> {
         `${recipeName} (${recipeId}): ${result.countCritical} / ${result.count} = ${percentage.toFixed(fractionDigits)}%`,
       );
     }
+  }
+
+  showAll() {
+    this.mod.command.message(`=== Production ===`);
+    this.showProductionResults();
+    this.mod.command.message(`=== Gacha ===`);
+    this.showGachaResults();
+    this.mod.command.message(`=== End ===`);
   }
 
   resetProductionResults() {
