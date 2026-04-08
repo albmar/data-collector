@@ -440,8 +440,8 @@ class DataCollector implements HotReloadable<ReloadState> {
 
   exportProductionResults(outputPath?: string) {
     const targetPath = outputPath
-      ? path.resolve(outputPath)
-      : path.resolve("production_results.csv");
+      ? path.resolve(__dirname, outputPath)
+      : path.resolve(__dirname, "production_results.csv");
 
     const escape = (value: string): string => {
       const safe = value.replace(/"/g, '""');
