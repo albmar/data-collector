@@ -220,7 +220,9 @@ class DataCollector implements HotReloadable<ReloadState> {
       (event: S_SYSTEM_MESSAGE_LOOT_ITEM_1) => {
         let num = event.amount;
         let itemId = event.item;
-        mod.log(`Looted ${num} ${mod.game.data.items.get(itemId)?.name}`);
+        mod.log(
+          `Looted ${num} ${mod.game.data.items.get(itemId)?.name} (${itemId})`,
+        );
       },
     );
     mod.hook(
@@ -261,6 +263,7 @@ class DataCollector implements HotReloadable<ReloadState> {
         let itemData = this.mod.game.data.items.get(this.usedItem);
         if (itemData?.combatItemType.toString() == "GACHA") {
           this.gacha = new Gacha(this.contract.id);
+          this.mod.log(`New Gacha ${this.gacha.id}`);
         }
       }
     });
@@ -271,8 +274,14 @@ class DataCollector implements HotReloadable<ReloadState> {
       if (this.gacha) {
         for (let boxes of event.boxes.values()) {
           this.gacha.add(boxes.randomReward.id, boxes.randomReward.amount);
+          this.mod.log(
+            `Added ${boxes.randomReward.amount}x ${this.mod.game.data.items.get(boxes.randomReward.id)?.name} to ${this.gacha.id}`,
+          );
           for (let fixed of boxes.fixedRewards.values()) {
             this.gacha.add(fixed.id, fixed.amount);
+            this.mod.log(
+              `Added ${fixed.amount}x ${this.mod.game.data.items.get(fixed.id)?.name} to ${this.gacha.id}`,
+            );
           }
         }
         this.gacha.count++;
@@ -287,11 +296,16 @@ class DataCollector implements HotReloadable<ReloadState> {
           this.gachaResults.set(this.usedItem, result);
         }
         result.count += this.gacha.count;
+        let sumItems = 0;
         for (let [itemId, newHist] of this.gacha.itemHistograms) {
+          sumItems += newHist.totalAmount;
           let hist = result.itemHistograms.get(itemId);
           newHist.merge(hist);
           result.itemHistograms.set(itemId, newHist);
         }
+        this.mod.log(
+          `Gacha Result = ${result.count}x boxes with ${sumItems}x items`,
+        );
       }
       this.gacha = null;
     });
