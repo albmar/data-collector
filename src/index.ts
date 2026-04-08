@@ -477,15 +477,19 @@ class DataCollector implements HotReloadable<ReloadState> {
 
   showGachaResults() {
     for (const [itemId, result] of this.gachaResults.entries()) {
-      const name = this.mod.game.data.items.get(itemId);
+      const name = this.mod.game.data.items.get(itemId)?.name;
 
       this.mod.command.message(`${name} (${itemId}):`);
 
       for (const [itemId, hist] of result.itemHistograms.entries()) {
-        const name = this.mod.game.data.items.get(itemId);
+        const name = this.mod.game.data.items.get(itemId)?.name;
 
+        const min = hist.min();
+        const mean = hist.mean().toFixed(2);
+        const median = hist.median().toFixed(2);
+        const max = hist.max();
         this.mod.command.message(
-          `- ${name} (${itemId}): min=${hist.min()} mean=${hist.mean()} median=${hist.median()} max=${hist.max()}`,
+          `- ${name} (${itemId}): min=${min} mean=${mean} median=${median} max=${max}`,
         );
       }
     }
