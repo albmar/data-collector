@@ -126,6 +126,7 @@ class Gacha {
     let hist = this.itemHistograms.get(id);
     if (hist === undefined) {
       hist = new Histogram();
+      this.itemHistograms.set(id, hist);
     }
     hist.add(amount);
   }
