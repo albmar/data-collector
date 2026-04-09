@@ -53,6 +53,15 @@ class Histogram {
   totalCount = 0;
   totalAmount = 0;
 
+  constructor(values?: Iterable<readonly [number, number]>) {
+    this.values = new Map(values);
+    this.totalCount = this.values.values().reduce((sum, x) => sum + x);
+    this.totalAmount = this.values
+      .entries()
+      .map(([k, v]) => k * v)
+      .reduce((sum, x) => sum + x);
+  }
+
   add(amount: number) {
     let count = this.values.get(amount);
     count = count === undefined ? 1 : count + 1;
