@@ -254,16 +254,21 @@ class DataCollector implements HotReloadable<ReloadState> {
     this.listener = new EventEmitter();
     const library = mod.require.library as LibraryIndex;
     const entity = library.entity;
+
+    const dataPath = path.resolve(__dirname, "data");
+    if (fs.existsSync(dataPath)) {
+      this.import(dataPath);
+    }
     mod.game.initialize("contract");
 
     mod.command.add("data", {
-      export: this.exportProductionResults.bind(this),
+      export: this.export.bind(this),
       show: {
         $default: this.showAll.bind(this),
         production: this.showProductionResults.bind(this),
         gacha: this.showGachaResults.bind(this),
       },
-      import: this.importProductionResults.bind(this),
+      import: this.import.bind(this),
       reset: this.resetProductionResults.bind(this),
     });
 
@@ -457,6 +462,11 @@ class DataCollector implements HotReloadable<ReloadState> {
   }
 
   destructor() {
+    const dataPath = path.resolve(__dirname, "data");
+    if (!fs.existsSync(dataPath)) {
+      fs.mkdirSync(dataPath);
+    }
+    this.export(dataPath);
     this.mod.game.me.removeListener(
       "change_zone",
       this.onChangeZone.bind(this),
@@ -507,21 +517,154 @@ class DataCollector implements HotReloadable<ReloadState> {
     this.mod.log(`zone: ${result?.attributes.string} (${zone}, ${zoneId})`);
   }
 
-  importProductionResults() {
-    this.mod.command.message("not yet implemented");
+  importGachaResults(inputPath?: string) {
+    const targetPath = inputPath
+      ? path.resolve(__dirname, inputPath, "gacha_results.csv")
+      : path.resolve(__dirname, "data", "gacha_results.csv");
+
+    let importer = new CSV();
+
+    importer.import(targetPath);
+
+    let prevItemId;
+    let prevBoxId;
+    let prevBoxCount;
+    let values: [number, number][] = [];
+    let result = new GachaResult();
+
+    let start = 0;
+    let end = importer.header.length;
+    while (start < importer.data.length) {
+      const [
+        _boxName,
+        boxId,
+        boxCount,
+        itemId,
+        _itemName,
+        _min,
+        _mean,
+        _median,
+        _max,
+        amount,
+        count,
+      ] = importer.data.slice(start, end);
+
+      values.push([amount, count]);
+
+      if (prevItemId && prevItemId != itemId) {
+        const hist = new Histogram(values);
+        result.itemHistograms.set(prevItemId, hist);
+        values = [];
+      }
+
+      if (prevBoxId && prevBoxId != boxId) {
+        result.count = prevBoxCount;
+        this.gachaResults.set(prevBoxId, result);
+        result = new GachaResult();
+      }
+
+      prevBoxId = boxId;
+      prevBoxCount = boxCount;
+      prevItemId = itemId;
+
+      start += importer.header.length;
+      end += importer.header.length;
+    }
+
+    if (prevItemId) {
+      let hist = new Histogram(values);
+      result.itemHistograms.set(prevItemId, hist);
+      values = [];
+    }
+
+    if (prevBoxId) {
+      result.count = prevBoxCount;
+      this.gachaResults.set(prevBoxId, result);
+      result = new GachaResult();
+    }
+  }
+
+  exportGachaResults(outputPath?: string) {
+    const targetPath = outputPath
+      ? path.resolve(__dirname, outputPath, "gacha_results.csv")
+      : path.resolve(__dirname, "data", "gacha_results.csv");
+
+    let exporter = new CSV();
+
+    exporter.addColumn("boxName");
+    exporter.addColumn("boxId");
+    exporter.addColumn("boxCount");
+    exporter.addColumn("itemId");
+    exporter.addColumn("itemName");
+    exporter.addColumn("min");
+    exporter.addColumn("mean");
+    exporter.addColumn("median");
+    exporter.addColumn("max");
+    exporter.addColumn("amount");
+    exporter.addColumn("count");
+
+    for (const [boxId, result] of this.gachaResults.entries()) {
+      let boxName = this.mod.game.data.items.get(boxId)?.name ?? "";
+      for (const [itemId, hist] of result.itemHistograms.entries()) {
+        let itemName = this.mod.game.data.items.get(itemId)?.name ?? "";
+        for (const [amount, count] of hist.values.entries()) {
+          exporter.addCell(boxName);
+          exporter.addCell(boxId);
+          exporter.addCell(result.count);
+          exporter.addCell(itemId);
+          exporter.addCell(itemName);
+          exporter.addCell(hist.min());
+          exporter.addCell(hist.mean());
+          exporter.addCell(hist.median());
+          exporter.addCell(hist.max());
+          exporter.addCell(amount);
+          exporter.addCell(count);
+        }
+      }
+    }
+
+    exporter.export(targetPath);
+  }
+
+  importProductionResults(inputPath?: string) {
+    const targetPath = inputPath
+      ? path.resolve(__dirname, inputPath, "production_results.csv")
+      : path.resolve(__dirname, "data", "production_results.csv");
+
+    let importer = new CSV();
+
+    importer.import(targetPath);
+
+    let start = 0;
+    let end = importer.header.length;
+    while (start < importer.data.length) {
+      const [recipeId, _, count, countCritical] = importer.data.slice(
+        start,
+        end,
+      );
+      const result = new ProductionResult();
+      result.count = count;
+      result.countCritical = countCritical;
+
+      this.results.set(recipeId, result);
+
+      start += importer.header.length;
+      end += importer.header.length;
+    }
   }
 
   exportProductionResults(outputPath?: string) {
     const targetPath = outputPath
-      ? path.resolve(__dirname, outputPath)
-      : path.resolve(__dirname, "production_results.csv");
+      ? path.resolve(__dirname, outputPath, "production_results.csv")
+      : path.resolve(__dirname, "data", "production_results.csv");
 
-    const escape = (value: string): string => {
-      const safe = value.replace(/"/g, '""');
-      return `"${safe}"`;
-    };
+    let exporter = new CSV();
 
-    const lines = ["recipeId,recipeName,count,countCritical"];
+    exporter.addColumn("recipeId");
+    exporter.addColumn("recipeName");
+    exporter.addColumn("count");
+    exporter.addColumn("countCritical");
+
     for (const [recipeId, result] of this.results.entries()) {
       let recipeName = "";
       const recipeEntry = this.recipes.get(recipeId);
@@ -531,21 +674,23 @@ class DataCollector implements HotReloadable<ReloadState> {
         recipeName = this.mod.game.data.items.get(namedItemId)?.name ?? "";
       }
 
-      const nameEscaped = recipeName ? escape(recipeName) : "";
-      lines.push(
-        `${recipeId},${nameEscaped},${result.count},${result.countCritical}`,
-      );
+      exporter.addCell(recipeId);
+      exporter.addCell(recipeName);
+      exporter.addCell(result.count);
+      exporter.addCell(result.countCritical);
     }
 
-    const csv = lines.join("\n");
-    try {
-      fs.writeFileSync(targetPath, csv, { encoding: "utf8" });
-      this.mod.log(`Production results exported to ${targetPath}`);
-    } catch (err: any) {
-      this.mod.log(`Failed to export production results: ${err.message}`);
-    }
+    exporter.export(targetPath);
+  }
 
-    return targetPath;
+  import(path?: string) {
+    this.importGachaResults(path);
+    this.importProductionResults(path);
+  }
+
+  export(outputPath?: string) {
+    this.exportGachaResults(outputPath);
+    this.exportProductionResults(outputPath);
   }
 
   showGachaResults() {
