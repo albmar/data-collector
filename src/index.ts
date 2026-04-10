@@ -55,11 +55,10 @@ class Histogram {
 
   constructor(values?: Iterable<readonly [number, number]>) {
     this.values = new Map(values);
-    this.totalCount = this.values.values().reduce((sum, x) => sum + x);
-    this.totalAmount = this.values
-      .entries()
+    this.totalCount = [...this.values.values()].reduce((sum, x) => sum + x, 0);
+    this.totalAmount = [...this.values.entries()]
       .map(([k, v]) => k * v)
-      .reduce((sum, x) => sum + x);
+      .reduce((sum, x) => sum + x, 0);
   }
 
   add(amount: number) {
