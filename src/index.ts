@@ -171,7 +171,7 @@ class CSV {
 
   unescape(value: string): string {
     let match = value.match(/^"(.*)"$/);
-    if (!match || !match[1])
+    if (!match || match[1] == null)
       throw new Error(`The value has to be in quotes, but was: ${value}`);
     return match[1].replace(/""/g, '"');
   }
