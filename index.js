@@ -35,6 +35,8 @@ var __importStar = (this && this.__importStar) || (function () {
 const stream_1 = require("stream");
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const histogram_1 = require("./histogram");
+const csv_1 = require("./csv");
 class Production {
     finished = false;
     critical = false;
@@ -55,72 +57,6 @@ class Contract {
         this.id = id;
     }
 }
-class Histogram {
-    values = new Map();
-    totalCount = 0;
-    totalAmount = 0;
-    constructor(values) {
-        this.values = new Map(values);
-        this.totalCount = [...this.values.values()].reduce((sum, x) => sum + x, 0);
-        this.totalAmount = [...this.values.entries()]
-            .map(([k, v]) => k * v)
-            .reduce((sum, x) => sum + x, 0);
-    }
-    add(amount) {
-        let count = this.values.get(amount);
-        count = count === undefined ? 1 : count + 1;
-        this.values.set(amount, count);
-        this.totalCount += 1;
-        this.totalAmount += amount;
-    }
-    merge(hist) {
-        if (!hist)
-            return;
-        for (const [amount, newCount] of hist.values.entries()) {
-            let count = this.values.get(amount);
-            count = count === undefined ? newCount : count + newCount;
-            this.values.set(amount, count);
-        }
-        this.totalCount += hist.totalCount;
-        this.totalAmount += hist.totalAmount;
-    }
-    min() {
-        let min = Infinity;
-        for (const x of this.values.keys()) {
-            min = Math.min(min, x);
-        }
-        return min;
-    }
-    max() {
-        let max = -Infinity;
-        for (const x of this.values.keys()) {
-            max = Math.max(max, x);
-        }
-        return max;
-    }
-    mean() {
-        return this.totalAmount / this.totalCount;
-    }
-    median() {
-        let entries = [...this.values.entries()]
-            .sort((a, b) => a[0] - b[0])
-            .values();
-        let mid = (this.totalCount - 1) / 2;
-        let lowerMid = Math.trunc(mid);
-        let [amount, count] = [0, 0];
-        for ([amount, count] of entries) {
-            if (lowerMid <= count) {
-                break;
-            }
-            lowerMid -= count;
-        }
-        if (lowerMid != mid && lowerMid == count) {
-            const [nextAmount] = entries.next().value;
-            return (amount + nextAmount) / 2;
-        }
-        return amount;
-    }
-}
 class Gacha {
     id;
     count = 0;
@@ -131,7 +67,7 @@ class Gacha {
     add(id, amount) {
         let hist = this.itemHistograms.get(id);
         if (hist === undefined) {
-            hist = new Histogram();
+            hist = new histogram_1.Histogram();
             this.itemHistograms.set(id, hist);
         }
         hist.add(amount);
@@ -144,57 +80,6 @@ class GachaResult {
 class ReloadState {
     results = new Map();
     gachaResults = new Map();
-}
-class CSV {
-    header = [];
-    data = [];
-    addColumn(name) {
-        this.header.push(name);
-        return this;
-    }
-    addCell(cell) {
-        this.data.push(cell);
-        return this;
-    }
-    escape(value) {
-        const safe = value.replace(/"/g, '""');
-        return `"${safe}"`;
-    }
-    unescape(value) {
-        let match = value.match(/^"(.*)"$/);
-        if (!match || match[1] == null)
-            throw new Error(`The value has to be in quotes, but was: ${value}`);
-        return match[1].replace(/""/g, '"');
-    }
-    import(outputPath, seperator = ",") {
-        const targetPath = outputPath
-            ? path.resolve(__dirname, outputPath)
-            : path.resolve(__dirname, "data.csv");
-        const csv = fs.readFileSync(targetPath, { encoding: "utf8" });
-        const lines = csv
-            .split("\n")
-            .map((line) => line.split(seperator))
-            .values();
-        this.header = lines.next().value;
-        this.data = [...lines].map((line) => line.map((v) => (v[0] == '"' ? this.unescape(v) : Number.parseFloat(v))));
-    }
-    export(outputPath, seperator = ",") {
-        const targetPath = outputPath
-            ? path.resolve(__dirname, outputPath)
-            : path.resolve(__dirname, "data.csv");
-        const numCol = this.header.length;
-        let lines = [this.header.join(seperator)];
-        let i = 0;
-        while (i * numCol < this.data.length) {
-            lines.push(this.data
-                .slice(i * numCol, (i + 1) * numCol)
-                .map((v) => (typeof v == "string" ? this.escape(v) : v))
-                .join(seperator));
-            i++;
-        }
-        const csv = lines.join("\n");
-        fs.writeFileSync(targetPath, csv, { encoding: "utf8" });
-    }
 }
 class DataCollector {
     mod;
@@ -426,7 +311,7 @@ class DataCollector {
         const targetPath = inputPath
             ? path.resolve(__dirname, inputPath, "gacha_results.csv")
             : path.resolve(__dirname, "data", "gacha_results.csv");
-        let importer = new CSV();
+        let importer = new csv_1.CSV();
         importer.import(targetPath);
         let prevItemId;
         let prevBoxId;
@@ -439,7 +324,7 @@ class DataCollector {
             const [_boxName, boxId, boxCount, itemId, _itemName, _min, _mean, _median, _max, amount, count,] = importer.data.slice(start, end);
             values.push([amount, count]);
             if (prevItemId && prevItemId != itemId) {
-                const hist = new Histogram(values);
+                const hist = new histogram_1.Histogram(values);
                 result.itemHistograms.set(prevItemId, hist);
                 values = [];
             }
@@ -455,7 +340,7 @@ class DataCollector {
             end += importer.header.length;
         }
         if (prevItemId) {
-            let hist = new Histogram(values);
+            let hist = new histogram_1.Histogram(values);
             result.itemHistograms.set(prevItemId, hist);
             values = [];
         }
@@ -469,7 +354,7 @@ class DataCollector {
         const targetPath = outputPath
             ? path.resolve(__dirname, outputPath, "gacha_results.csv")
             : path.resolve(__dirname, "data", "gacha_results.csv");
-        let exporter = new CSV();
+        let exporter = new csv_1.CSV();
         exporter.addColumn("boxName");
         exporter.addColumn("boxId");
         exporter.addColumn("boxCount");
@@ -506,7 +391,7 @@ class DataCollector {
         const targetPath = inputPath
             ? path.resolve(__dirname, inputPath, "production_results.csv")
             : path.resolve(__dirname, "data", "production_results.csv");
-        let importer = new CSV();
+        let importer = new csv_1.CSV();
         importer.import(targetPath);
         let start = 0;
         let end = importer.header.length;
@@ -524,7 +409,7 @@ class DataCollector {
         const targetPath = outputPath
             ? path.resolve(__dirname, outputPath, "production_results.csv")
             : path.resolve(__dirname, "data", "production_results.csv");
-        let exporter = new CSV();
+        let exporter = new csv_1.CSV();
         exporter.addColumn("recipeId");
         exporter.addColumn("recipeName");
         exporter.addColumn("count");
