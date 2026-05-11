@@ -22,6 +22,8 @@ import {
 import * as fs from "fs";
 import * as path from "path";
 import { Material, Recipe, Result } from "./dbInterfaces";
+import { Histogram } from "./histogram";
+import { CSV } from "./csv";
 
 class Production {
   finished: boolean = false;
@@ -48,78 +50,6 @@ class Contract {
   }
 }
 
-class Histogram {
-  values = new Map<number, number>();
-  totalCount = 0;
-  totalAmount = 0;
-
-  constructor(values?: Iterable<readonly [number, number]>) {
-    this.values = new Map(values);
-    this.totalCount = [...this.values.values()].reduce((sum, x) => sum + x, 0);
-    this.totalAmount = [...this.values.entries()]
-      .map(([k, v]) => k * v)
-      .reduce((sum, x) => sum + x, 0);
-  }
-
-  add(amount: number) {
-    let count = this.values.get(amount);
-    count = count === undefined ? 1 : count + 1;
-    this.values.set(amount, count);
-    this.totalCount += 1;
-    this.totalAmount += amount;
-  }
-
-  merge(hist?: Histogram) {
-    if (!hist) return;
-    for (const [amount, newCount] of hist.values.entries()) {
-      let count = this.values.get(amount);
-      count = count === undefined ? newCount : count + newCount;
-      this.values.set(amount, count);
-    }
-    this.totalCount += hist.totalCount;
-    this.totalAmount += hist.totalAmount;
-  }
-
-  min(): number {
-    let min = Infinity;
-    for (const x of this.values.keys()) {
-      min = Math.min(min, x);
-    }
-    return min;
-  }
-
-  max(): number {
-    let max = -Infinity;
-    for (const x of this.values.keys()) {
-      max = Math.max(max, x);
-    }
-    return max;
-  }
-
-  mean(): number {
-    return this.totalAmount / this.totalCount;
-  }
-
-  median(): number {
-    let entries = [...this.values.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .values();
-    let mid = (this.totalCount - 1) / 2;
-    let lowerMid = Math.trunc(mid);
-    let [amount, count] = [0, 0];
-    for ([amount, count] of entries) {
-      if (lowerMid <= count) {
-        break;
-      }
-      lowerMid -= count;
-    }
-    if (lowerMid != mid && lowerMid == count) {
-      const [nextAmount] = entries.next().value!;
-      return (amount + nextAmount) / 2;
-    }
-    return amount;
-  }
-}
 
 class Gacha {
   id: bigint;
@@ -150,70 +80,6 @@ class ReloadState {
   gachaResults: Map<ItemId, GachaResult> = new Map();
 }
 
-class CSV {
-  header: string[] = [];
-  data: any[] = [];
-
-  addColumn(name: string) {
-    this.header.push(name);
-    return this;
-  }
-
-  addCell(cell: any) {
-    this.data.push(cell);
-    return this;
-  }
-
-  escape(value: string): string {
-    const safe = value.replace(/"/g, '""');
-    return `"${safe}"`;
-  }
-
-  unescape(value: string): string {
-    let match = value.match(/^"(.*)"$/);
-    if (!match || match[1] == null)
-      throw new Error(`The value has to be in quotes, but was: ${value}`);
-    return match[1].replace(/""/g, '"');
-  }
-
-  import(outputPath: string, seperator: string = ",") {
-    const targetPath = outputPath
-      ? path.resolve(__dirname, outputPath)
-      : path.resolve(__dirname, "data.csv");
-
-    const csv = fs.readFileSync(targetPath, { encoding: "utf8" });
-    const lines = csv
-      .split("\n")
-      .map((line) => line.split(seperator))
-      .values();
-    this.header = lines.next().value!;
-    this.data = [...lines].map((line) =>
-      line.map((v) => (v[0] == '"' ? this.unescape(v) : Number.parseFloat(v))),
-    );
-  }
-
-  export(outputPath: string, seperator: string = ",") {
-    const targetPath = outputPath
-      ? path.resolve(__dirname, outputPath)
-      : path.resolve(__dirname, "data.csv");
-
-    const numCol = this.header.length;
-    let lines = [this.header.join(seperator)];
-    let i = 0;
-    while (i * numCol < this.data.length) {
-      lines.push(
-        this.data
-          .slice(i * numCol, (i + 1) * numCol)
-          .map((v) => (typeof v == "string" ? this.escape(v) : v))
-          .join(seperator),
-      );
-      i++;
-    }
-
-    const csv = lines.join("\n");
-    fs.writeFileSync(targetPath, csv, { encoding: "utf8" });
-  }
-}
 
 type RecipeId = number;
 
