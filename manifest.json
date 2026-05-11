@@ -1,13 +1,14 @@
 {
   "files": {
+    "LICENSE": "2953292703431c745dc3a747ea0e80c5da3646a2159b5287c3391e52e0ed6d21",
     "csv.js": "b032056e1b2275595a09789e731f33fcffc708a9eb32edd52382145f12db5599",
     "dbInterfaces.js": "d43aa81f5bc89faa359e0f97c814ba25155591ff078fbb9bfd40f8c7c9683230",
     "histogram.js": "1a011b0b433861e76f87f4eaeff94914c6613040ff93ed3b8b278eb3062bcc8e",
-    "index.js": "0a561e95ee3d86ef3ebe76ee0619197728d1de842a625de1e4e4872768406568",
+    "index.js": "6e72fc8f95cb4d3ffe097950d553544100c9b9b7aa686e8a26200bb1870c26aa",
     "libraryInterfaces.js": "90e1d19eea4d2bd670a60138e8b32a310e5fccead20385cc833b00d16fd36ff0",
     "module.config.json": "c0a16dfca2dc00eb2f4c5670a98fcc163fd4f85c34b04fe825e6c3e79de88ca1",
-    "module.json": "15c44db14d88930e1004f2036aaa148d7e75b375142b4d26bf2d1f8ed9bda83d",
+    "module.json": "28369756d98834b88e5d1bf4a68eb4b323ff8dcddb184a4e3361c0629993bae2",
     "package-lock.json": "7801260ca9091277997b74af12fbbfccdeef080752ff4a1c7aba1f8898e60309",
-    "package.json": "dd9929525b9bcdb8dba55a549011141bb8b168fbda9d53fb34198f6c868c2f72"
+    "package.json": "17b8f4ed59a8b9015862512948ff9b3a43898f5afc5365e6da1f9f650fa47b2e"
   }
 }
