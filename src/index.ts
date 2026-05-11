@@ -26,6 +26,13 @@ import * as path from "path";
 import { Material, Recipe, Result, String as DBString } from "./dbInterfaces";
 import { Histogram } from "./histogram";
 import { CSV } from "./csv";
+import {
+  GachaResult,
+  BossLoot,
+  DungeonResult,
+  parseGachaCSV,
+  parseLootCSV,
+} from "./results";
 
 class Production {
   finished: boolean = false;
@@ -69,22 +76,6 @@ class Gacha {
     }
     hist.add(amount);
   }
-}
-
-class GachaResult {
-  count: number = 0;
-  itemHistograms = new Map<ItemId, Histogram>();
-}
-
-class BossLoot {
-  name: string = "";
-  killCount: number = 0;
-  itemHistograms = new Map<ItemId, Histogram>();
-}
-
-class DungeonResult {
-  name: string = "";
-  bosses = new Map<TemplateId, BossLoot>();
 }
 
 class ReloadState {
@@ -423,65 +414,8 @@ class DataCollector implements HotReloadable<ReloadState> {
       : path.resolve(__dirname, "data", "gacha_results.csv");
 
     let importer = new CSV();
-
     importer.import(targetPath);
-
-    let prevItemId;
-    let prevBoxId;
-    let prevBoxCount;
-    let values: [number, number][] = [];
-    let result = new GachaResult();
-
-    let start = 0;
-    let end = importer.header.length;
-    while (start < importer.data.length) {
-      const [
-        _boxName,
-        boxId,
-        boxCount,
-        itemId,
-        _itemName,
-        _min,
-        _mean,
-        _median,
-        _max,
-        amount,
-        count,
-      ] = importer.data.slice(start, end);
-
-      if (prevItemId && prevItemId != itemId) {
-        const hist = new Histogram(values);
-        result.itemHistograms.set(prevItemId, hist);
-        values = [];
-      }
-
-      if (prevBoxId && prevBoxId != boxId) {
-        result.count = prevBoxCount;
-        this.gachaResults.set(prevBoxId, result);
-        result = new GachaResult();
-      }
-
-      values.push([amount, count]);
-
-      prevBoxId = boxId;
-      prevBoxCount = boxCount;
-      prevItemId = itemId;
-
-      start += importer.header.length;
-      end += importer.header.length;
-    }
-
-    if (prevItemId) {
-      let hist = new Histogram(values);
-      result.itemHistograms.set(prevItemId, hist);
-      values = [];
-    }
-
-    if (prevBoxId) {
-      result.count = prevBoxCount;
-      this.gachaResults.set(prevBoxId, result);
-      result = new GachaResult();
-    }
+    this.gachaResults = parseGachaCSV(importer.data, importer.header.length);
   }
 
   exportGachaResults(outputPath?: string) {
@@ -533,79 +467,7 @@ class DataCollector implements HotReloadable<ReloadState> {
 
     let importer = new CSV();
     importer.import(targetPath);
-
-    let prevItemId: number | undefined;
-    let prevBossId: number | undefined;
-    let prevDungeonId: number | undefined;
-    let prevBossName: string = "";
-    let prevBossKills: number = 0;
-    let prevDungeonName: string = "";
-    let values: [number, number][] = [];
-    let boss = new BossLoot();
-    let dungeonResult = new DungeonResult();
-
-    let start = 0;
-    let end = importer.header.length;
-    while (start < importer.data.length) {
-      const [
-        dungeonId,
-        dungeonName,
-        bossId,
-        bossName,
-        bossKills,
-        itemId,
-        _itemName,
-        _min,
-        _mean,
-        _median,
-        _max,
-        amount,
-        count,
-      ] = importer.data.slice(start, end);
-
-      if (prevItemId !== undefined && prevItemId !== itemId) {
-        boss.itemHistograms.set(prevItemId, new Histogram(values));
-        values = [];
-      }
-
-      if (prevBossId !== undefined && prevBossId !== bossId) {
-        boss.name = prevBossName;
-        boss.killCount = prevBossKills;
-        dungeonResult.bosses.set(prevBossId, boss);
-        boss = new BossLoot();
-      }
-
-      if (prevDungeonId !== undefined && prevDungeonId !== dungeonId) {
-        dungeonResult.name = prevDungeonName;
-        this.lootResults.set(prevDungeonId, dungeonResult);
-        dungeonResult = new DungeonResult();
-      }
-
-      values.push([amount, count]);
-
-      prevDungeonId = dungeonId;
-      prevDungeonName = dungeonName;
-      prevBossId = bossId;
-      prevBossName = bossName;
-      prevBossKills = bossKills;
-      prevItemId = itemId;
-
-      start += importer.header.length;
-      end += importer.header.length;
-    }
-
-    if (prevItemId !== undefined) {
-      boss.itemHistograms.set(prevItemId, new Histogram(values));
-    }
-    if (prevBossId !== undefined) {
-      boss.name = prevBossName;
-      boss.killCount = prevBossKills;
-      dungeonResult.bosses.set(prevBossId, boss);
-    }
-    if (prevDungeonId !== undefined) {
-      dungeonResult.name = prevDungeonName;
-      this.lootResults.set(prevDungeonId, dungeonResult);
-    }
+    this.lootResults = parseLootCSV(importer.data, importer.header.length);
   }
 
   exportLootResults(outputPath?: string) {
