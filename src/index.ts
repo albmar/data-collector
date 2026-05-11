@@ -11,17 +11,19 @@ import {
   C_GACHA_CANCEL_1,
   C_START_PRODUCE_1,
   C_USE_ITEM_3,
+  S_DESPAWN_NPC_3,
   S_END_PRODUCE_1,
   S_GACHA_END_5,
   S_GACHA_START_2,
   S_PRODUCE_CRITICAL_1,
   S_SPAWN_DROPITEM_9,
+  S_SPAWN_NPC_12,
   S_SYSTEM_MESSAGE_LOOT_ITEM_1,
   S_SYSTEM_MESSAGE_LOOT_SPECIAL_ITEM_1,
 } from "tera-toolbox/definitions";
 import * as fs from "fs";
 import * as path from "path";
-import { Material, Recipe, Result } from "./dbInterfaces";
+import { Material, Recipe, Result, String as DBString } from "./dbInterfaces";
 import { Histogram } from "./histogram";
 import { CSV } from "./csv";
 
@@ -50,7 +52,6 @@ class Contract {
   }
 }
 
-
 class Gacha {
   id: bigint;
   count: number = 0;
@@ -75,15 +76,27 @@ class GachaResult {
   itemHistograms = new Map<ItemId, Histogram>();
 }
 
+class BossLoot {
+  name: string = "";
+  killCount: number = 0;
+  itemHistograms = new Map<ItemId, Histogram>();
+}
+
+class DungeonResult {
+  name: string = "";
+  bosses = new Map<TemplateId, BossLoot>();
+}
+
 class ReloadState {
   results: Map<RecipeId, ProductionResult> = new Map();
   gachaResults: Map<ItemId, GachaResult> = new Map();
+  lootResults: Map<DungeonId, DungeonResult> = new Map();
 }
 
-
 type RecipeId = number;
-
 type ItemId = number;
+type TemplateId = number;
+type DungeonId = number;
 
 class DataCollector implements HotReloadable<ReloadState> {
   mod: NetworkModInterface<DataCollector, DataCollector, DataCollector>;
@@ -97,11 +110,16 @@ class DataCollector implements HotReloadable<ReloadState> {
 
   results: Map<RecipeId, ProductionResult> = new Map();
   gachaResults: Map<ItemId, GachaResult> = new Map();
+  lootResults: Map<DungeonId, DungeonResult> = new Map();
+
+  currentDungeonId: DungeonId | null = null;
+  npcCache: Map<bigint, { templateId: TemplateId; name: string }> = new Map();
 
   loadState(state: ReloadState): ReloadState {
     if (state) {
       this.results = state.results;
       this.gachaResults = state.gachaResults;
+      this.lootResults = state.lootResults ?? new Map();
     }
     return state;
   }
@@ -110,6 +128,7 @@ class DataCollector implements HotReloadable<ReloadState> {
     let state = new ReloadState();
     state.results = this.results;
     state.gachaResults = this.gachaResults;
+    state.lootResults = this.lootResults;
     return state;
   }
 
@@ -118,8 +137,6 @@ class DataCollector implements HotReloadable<ReloadState> {
   ) {
     this.mod = mod;
     this.listener = new EventEmitter();
-    const library = mod.require.library as LibraryIndex;
-    const entity = library.entity;
 
     const dataPath = path.resolve(__dirname, "data");
     if (fs.existsSync(dataPath)) {
@@ -133,60 +150,16 @@ class DataCollector implements HotReloadable<ReloadState> {
         $default: this.showAll.bind(this),
         production: this.showProductionResults.bind(this),
         gacha: this.showGachaResults.bind(this),
+        loot: this.showLootResults.bind(this),
       },
       import: this.import.bind(this),
       reset: this.resetProductionResults.bind(this),
     });
 
     this.hookProduction();
-
     this.hookGacha();
+    this.hookLoot();
 
-    // loot
-    // S_SPAWN_DROPITEM
-    // S_SYSTEM_MESSAGE_LOOT_ITEM
-    // S_SYSTEM_MESSAGE_LOOT_SPECIAL_ITEM
-    // S_LOOT_DROPITEM
-    // S_DESPAWN_DROPITEM
-    //
-
-    mod.hook("S_SPAWN_DROPITEM", "*", (event: S_SPAWN_DROPITEM_9) => {
-      let num = event.amount;
-      let itemId = event.item;
-      mod.log(`Dropped ${num} ${mod.game.data.items.get(itemId)?.name}`);
-    });
-    mod.hook("S_LOOT_DROPITEM", "raw", (code, rawData, incoming, fake) => {
-      mod.log(rawData.toString("hex"));
-    });
-    mod.hook(
-      "S_SYSTEM_MESSAGE_LOOT_ITEM",
-      "*",
-      (event: S_SYSTEM_MESSAGE_LOOT_ITEM_1) => {
-        let num = event.amount;
-        let itemId = event.item;
-        mod.log(
-          `Looted ${num} ${mod.game.data.items.get(itemId)?.name} (${itemId})`,
-        );
-      },
-    );
-    mod.hook(
-      "S_SYSTEM_MESSAGE_LOOT_SPECIAL_ITEM",
-      "*",
-      (event: S_SYSTEM_MESSAGE_LOOT_SPECIAL_ITEM_1) => {
-        let num = event.amount;
-        let itemId = event.id;
-        mod.log(
-          `Looted special ${num} ${mod.game.data.items.get(itemId)?.name}`,
-        );
-      },
-    );
-
-    // mod.hook("S_SPAWN_NPC", "*", (event: S_SPAWN_NPC_12) => {});
-    // mod.hook("S_DESPAWN_NPC", "*", (event: S_DESPAWN_NPC_3) => {});
-    // mod.hook("S_TARGET_INFO", "*", (event: S_TARGET_INFO_3) => {
-    //   let percentage = event.hpPercentage * 100;
-    //   mod.log(`Target ${event.target} at ${percentage.toFixed(2)}%`);
-    // });
     mod.game.me.on("change_zone", this.onChangeZone.bind(this));
   }
 
@@ -254,6 +227,51 @@ class DataCollector implements HotReloadable<ReloadState> {
       this.gacha = null;
     });
     // S_CANCEL_CONTRACT id
+  }
+
+  private hookLoot() {
+    this.mod.hook("S_SPAWN_NPC", "*", (event: S_SPAWN_NPC_12) => {
+      const name =
+        (this.mod.game.data as any).npcs?.get(event.templateId)?.name ?? "";
+      this.npcCache.set(event.gameId, { templateId: event.templateId, name });
+    });
+
+    this.mod.hook("S_DESPAWN_NPC", "*", (event: S_DESPAWN_NPC_3) => {
+      if (this.currentDungeonId === null) return;
+      const npc = this.npcCache.get(event.gameId);
+      if (!npc) return;
+      const dungeonResult = this.lootResults.get(this.currentDungeonId);
+      if (!dungeonResult) return;
+      const boss = dungeonResult.bosses.get(npc.templateId);
+      if (!boss) return;
+      boss.killCount++;
+    });
+
+    this.mod.hook("S_SPAWN_DROPITEM", "*", (event: S_SPAWN_DROPITEM_9) => {
+      if (this.currentDungeonId === null || !event.source) return;
+      const npc = this.npcCache.get(event.source);
+      if (!npc) return;
+
+      const dungeonResult = this.lootResults.get(this.currentDungeonId)!;
+
+      let boss = dungeonResult.bosses.get(npc.templateId);
+      if (!boss) {
+        boss = new BossLoot();
+        boss.name = npc.name;
+        dungeonResult.bosses.set(npc.templateId, boss);
+      }
+
+      let hist = boss.itemHistograms.get(event.item);
+      if (!hist) {
+        hist = new Histogram();
+        boss.itemHistograms.set(event.item, hist);
+      }
+      hist.add(event.amount);
+
+      this.mod.log(
+        `Loot: ${event.amount}x ${this.mod.game.data.items.get(event.item)?.name} from ${boss.name || npc.templateId}`,
+      );
+    });
   }
 
   private hookProduction() {
@@ -356,17 +374,31 @@ class DataCollector implements HotReloadable<ReloadState> {
   }
 
   async onChangeZone(zone: number, quick: boolean) {
+    this.npcCache.clear();
+
     this.mod.log(`in dungeon: ${this.mod.game.me.inDungeon}`);
     if (this.mod.game.me.inDungeon) {
+      this.currentDungeonId = zone;
+
+      if (!this.lootResults.has(zone)) {
+        this.lootResults.set(zone, new DungeonResult());
+      }
+
       var result = (await this.mod.queryData(
         "/StrSheet_Dungeon/String@id=?",
         [zone] as any,
         false,
         false,
       )) as DBElement;
-      let dungeon = result?.attributes.string;
-      this.mod.log(`dungeon: ${dungeon} (${zone})`);
+      const dungeonName = (result?.attributes as DBString).string;
+      if (dungeonName) {
+        this.lootResults.get(zone)!.name = dungeonName;
+      }
+      this.mod.log(`dungeon: ${dungeonName} (${zone})`);
+    } else {
+      this.currentDungeonId = null;
     }
+
     var result = (await this.mod.queryData(
       "/Area@continentId=?",
       [zone] as any,
@@ -492,6 +524,152 @@ class DataCollector implements HotReloadable<ReloadState> {
     exporter.export(targetPath);
   }
 
+  importLootResults(inputPath?: string) {
+    const targetPath = inputPath
+      ? path.resolve(__dirname, inputPath, "loot_results.csv")
+      : path.resolve(__dirname, "data", "loot_results.csv");
+
+    let importer = new CSV();
+    importer.import(targetPath);
+
+    let prevItemId: number | undefined;
+    let prevBossId: number | undefined;
+    let prevDungeonId: number | undefined;
+    let prevBossName: string = "";
+    let prevBossKills: number = 0;
+    let prevDungeonName: string = "";
+    let values: [number, number][] = [];
+    let boss = new BossLoot();
+    let dungeonResult = new DungeonResult();
+
+    let start = 0;
+    let end = importer.header.length;
+    while (start < importer.data.length) {
+      const [
+        dungeonId,
+        dungeonName,
+        bossId,
+        bossName,
+        bossKills,
+        itemId,
+        _itemName,
+        _min,
+        _mean,
+        _median,
+        _max,
+        amount,
+        count,
+      ] = importer.data.slice(start, end);
+
+      values.push([amount, count]);
+
+      if (prevItemId !== undefined && prevItemId !== itemId) {
+        boss.itemHistograms.set(prevItemId, new Histogram(values));
+        values = [];
+      }
+
+      if (prevBossId !== undefined && prevBossId !== bossId) {
+        boss.name = prevBossName;
+        boss.killCount = prevBossKills;
+        dungeonResult.bosses.set(prevBossId, boss);
+        boss = new BossLoot();
+      }
+
+      if (prevDungeonId !== undefined && prevDungeonId !== dungeonId) {
+        dungeonResult.name = prevDungeonName;
+        this.lootResults.set(prevDungeonId, dungeonResult);
+        dungeonResult = new DungeonResult();
+      }
+
+      prevDungeonId = dungeonId;
+      prevDungeonName = dungeonName;
+      prevBossId = bossId;
+      prevBossName = bossName;
+      prevBossKills = bossKills;
+      prevItemId = itemId;
+
+      start += importer.header.length;
+      end += importer.header.length;
+    }
+
+    if (prevItemId !== undefined) {
+      boss.itemHistograms.set(prevItemId, new Histogram(values));
+    }
+    if (prevBossId !== undefined) {
+      boss.name = prevBossName;
+      boss.killCount = prevBossKills;
+      dungeonResult.bosses.set(prevBossId, boss);
+    }
+    if (prevDungeonId !== undefined) {
+      dungeonResult.name = prevDungeonName;
+      this.lootResults.set(prevDungeonId, dungeonResult);
+    }
+  }
+
+  exportLootResults(outputPath?: string) {
+    const targetPath = outputPath
+      ? path.resolve(__dirname, outputPath, "loot_results.csv")
+      : path.resolve(__dirname, "data", "loot_results.csv");
+
+    let exporter = new CSV();
+    exporter.addColumn("dungeonId");
+    exporter.addColumn("dungeonName");
+    exporter.addColumn("bossId");
+    exporter.addColumn("bossName");
+    exporter.addColumn("bossKills");
+    exporter.addColumn("itemId");
+    exporter.addColumn("itemName");
+    exporter.addColumn("min");
+    exporter.addColumn("mean");
+    exporter.addColumn("median");
+    exporter.addColumn("max");
+    exporter.addColumn("amount");
+    exporter.addColumn("count");
+
+    for (const [dungeonId, dungeonResult] of this.lootResults.entries()) {
+      for (const [bossId, boss] of dungeonResult.bosses.entries()) {
+        for (const [itemId, hist] of boss.itemHistograms.entries()) {
+          const itemName = this.mod.game.data.items.get(itemId)?.name ?? "";
+          for (const [amount, count] of hist.values.entries()) {
+            exporter.addCell(dungeonId);
+            exporter.addCell(dungeonResult.name);
+            exporter.addCell(bossId);
+            exporter.addCell(boss.name);
+            exporter.addCell(boss.killCount);
+            exporter.addCell(itemId);
+            exporter.addCell(itemName);
+            exporter.addCell(hist.min());
+            exporter.addCell(hist.mean());
+            exporter.addCell(hist.median());
+            exporter.addCell(hist.max());
+            exporter.addCell(amount);
+            exporter.addCell(count);
+          }
+        }
+      }
+    }
+
+    exporter.export(targetPath);
+  }
+
+  showLootResults() {
+    for (const [dungeonId, dungeonResult] of this.lootResults.entries()) {
+      this.mod.command.message(`${dungeonResult.name || dungeonId}:`);
+      for (const [bossId, boss] of dungeonResult.bosses.entries()) {
+        this.mod.command.message(
+          `  ${boss.name || bossId} (${boss.killCount} kills):`,
+        );
+        for (const [itemId, hist] of boss.itemHistograms.entries()) {
+          const itemName =
+            this.mod.game.data.items.get(itemId)?.name ?? String(itemId);
+          this.mod.command.message(
+            `    - ${itemName}: min=${hist.min()} mean=${hist.mean().toFixed(2)} median=${hist.median().toFixed(2)} max=${hist.max()}`,
+          );
+        }
+      }
+    }
+  }
+
   importProductionResults(inputPath?: string) {
     const targetPath = inputPath
       ? path.resolve(__dirname, inputPath, "production_results.csv")
@@ -552,11 +730,13 @@ class DataCollector implements HotReloadable<ReloadState> {
   import(path?: string) {
     this.importGachaResults(path);
     this.importProductionResults(path);
+    this.importLootResults(path);
   }
 
   export(outputPath?: string) {
     this.exportGachaResults(outputPath);
     this.exportProductionResults(outputPath);
+    this.exportLootResults(outputPath);
   }
 
   showGachaResults() {
@@ -601,6 +781,8 @@ class DataCollector implements HotReloadable<ReloadState> {
     this.showProductionResults();
     this.mod.command.message(`=== Gacha ===`);
     this.showGachaResults();
+    this.mod.command.message(`=== Loot ===`);
+    this.showLootResults();
     this.mod.command.message(`=== End ===`);
   }
 
