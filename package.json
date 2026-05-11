@@ -2,7 +2,7 @@
   "name": "data-collector",
   "version": "0.1.0",
   "description": "",
-  "main": "dist/index.js",
+  "main": "index.js",
   "keywords": [],
   "author": "albmar",
   "license": "ISC",
