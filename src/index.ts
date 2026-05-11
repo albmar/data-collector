@@ -141,6 +141,8 @@ class DataCollector implements HotReloadable<ReloadState> {
     const dataPath = path.resolve(__dirname, "data");
     if (fs.existsSync(dataPath)) {
       this.import(dataPath);
+    } else {
+      fs.mkdirSync(dataPath, { recursive: true });
     }
     mod.game.initialize("contract");
 

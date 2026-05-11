@@ -126,6 +126,9 @@ class DataCollector {
         if (fs.existsSync(dataPath)) {
             this.import(dataPath);
         }
+        else {
+            fs.mkdirSync(dataPath, { recursive: true });
+        }
         mod.game.initialize("contract");
         mod.command.add("data", {
             export: this.export.bind(this),

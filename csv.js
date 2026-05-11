@@ -61,15 +61,20 @@ class CSV {
         const targetPath = outputPath
             ? path.resolve(__dirname, outputPath)
             : path.resolve(__dirname, "data.csv");
-        const csv = fs.readFileSync(targetPath, { encoding: "utf8" });
-        const lines = csv
-            .split("\n")
-            .map((line) => line.split(seperator))
-            .values();
-        this.header = lines.next().value;
-        this.data = [...lines]
-            .filter((line) => !(line.length === 1 && line[0] === ""))
-            .flatMap((line) => line.map((v) => (v[0] == '"' ? this.unescape(v) : Number.parseFloat(v))));
+        try {
+            const csv = fs.readFileSync(targetPath, { encoding: "utf8" });
+            const lines = csv
+                .split("\n")
+                .map((line) => line.split(seperator))
+                .values();
+            this.header = lines.next().value;
+            this.data = [...lines]
+                .filter((line) => !(line.length === 1 && line[0] === ""))
+                .flatMap((line) => line.map((v) => v[0] == '"' ? this.unescape(v) : Number.parseFloat(v)));
+        }
+        catch (e) {
+            return;
+        }
     }
     export(outputPath, seperator = ",") {
         const targetPath = outputPath

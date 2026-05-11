@@ -2,7 +2,7 @@
   "name": "data-collector",
   "author": "albmar",
   "description": "Collects data",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "options": {
     "niceName": "Data Collector",
     "reloadable": true
