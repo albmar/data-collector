@@ -449,8 +449,6 @@ class DataCollector implements HotReloadable<ReloadState> {
         count,
       ] = importer.data.slice(start, end);
 
-      values.push([amount, count]);
-
       if (prevItemId && prevItemId != itemId) {
         const hist = new Histogram(values);
         result.itemHistograms.set(prevItemId, hist);
@@ -462,6 +460,8 @@ class DataCollector implements HotReloadable<ReloadState> {
         this.gachaResults.set(prevBoxId, result);
         result = new GachaResult();
       }
+
+      values.push([amount, count]);
 
       prevBoxId = boxId;
       prevBoxCount = boxCount;
@@ -563,8 +563,6 @@ class DataCollector implements HotReloadable<ReloadState> {
         count,
       ] = importer.data.slice(start, end);
 
-      values.push([amount, count]);
-
       if (prevItemId !== undefined && prevItemId !== itemId) {
         boss.itemHistograms.set(prevItemId, new Histogram(values));
         values = [];
@@ -582,6 +580,8 @@ class DataCollector implements HotReloadable<ReloadState> {
         this.lootResults.set(prevDungeonId, dungeonResult);
         dungeonResult = new DungeonResult();
       }
+
+      values.push([amount, count]);
 
       prevDungeonId = dungeonId;
       prevDungeonName = dungeonName;
