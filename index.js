@@ -37,6 +37,7 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const histogram_1 = require("./histogram");
 const csv_1 = require("./csv");
+const results_1 = require("./results");
 class Production {
     finished = false;
     critical = false;
@@ -72,19 +73,6 @@ class Gacha {
         }
         hist.add(amount);
     }
-}
-class GachaResult {
-    count = 0;
-    itemHistograms = new Map();
-}
-class BossLoot {
-    name = "";
-    killCount = 0;
-    itemHistograms = new Map();
-}
-class DungeonResult {
-    name = "";
-    bosses = new Map();
 }
 class ReloadState {
     results = new Map();
@@ -186,7 +174,7 @@ class DataCollector {
             if (this.gacha && this.usedItem) {
                 let result = this.gachaResults.get(this.usedItem);
                 if (result === undefined) {
-                    result = new GachaResult();
+                    result = new results_1.GachaResult();
                     this.gachaResults.set(this.usedItem, result);
                 }
                 result.count += this.gacha.count;
@@ -231,7 +219,7 @@ class DataCollector {
             const dungeonResult = this.lootResults.get(this.currentDungeonId);
             let boss = dungeonResult.bosses.get(npc.templateId);
             if (!boss) {
-                boss = new BossLoot();
+                boss = new results_1.BossLoot();
                 boss.name = npc.name;
                 dungeonResult.bosses.set(npc.templateId, boss);
             }
@@ -329,7 +317,7 @@ class DataCollector {
         if (this.mod.game.me.inDungeon) {
             this.currentDungeonId = zone;
             if (!this.lootResults.has(zone)) {
-                this.lootResults.set(zone, new DungeonResult());
+                this.lootResults.set(zone, new results_1.DungeonResult());
             }
             var result = (await this.mod.queryData("/StrSheet_Dungeon/String@id=?", [zone], false, false));
             const dungeonName = (result?.attributes).string;
@@ -352,42 +340,7 @@ class DataCollector {
             : path.resolve(__dirname, "data", "gacha_results.csv");
         let importer = new csv_1.CSV();
         importer.import(targetPath);
-        let prevItemId;
-        let prevBoxId;
-        let prevBoxCount;
-        let values = [];
-        let result = new GachaResult();
-        let start = 0;
-        let end = importer.header.length;
-        while (start < importer.data.length) {
-            const [_boxName, boxId, boxCount, itemId, _itemName, _min, _mean, _median, _max, amount, count,] = importer.data.slice(start, end);
-            values.push([amount, count]);
-            if (prevItemId && prevItemId != itemId) {
-                const hist = new histogram_1.Histogram(values);
-                result.itemHistograms.set(prevItemId, hist);
-                values = [];
-            }
-            if (prevBoxId && prevBoxId != boxId) {
-                result.count = prevBoxCount;
-                this.gachaResults.set(prevBoxId, result);
-                result = new GachaResult();
-            }
-            prevBoxId = boxId;
-            prevBoxCount = boxCount;
-            prevItemId = itemId;
-            start += importer.header.length;
-            end += importer.header.length;
-        }
-        if (prevItemId) {
-            let hist = new histogram_1.Histogram(values);
-            result.itemHistograms.set(prevItemId, hist);
-            values = [];
-        }
-        if (prevBoxId) {
-            result.count = prevBoxCount;
-            this.gachaResults.set(prevBoxId, result);
-            result = new GachaResult();
-        }
+        this.gachaResults = (0, results_1.parseGachaCSV)(importer.data, importer.header.length);
     }
     exportGachaResults(outputPath) {
         const targetPath = outputPath
@@ -432,56 +385,7 @@ class DataCollector {
             : path.resolve(__dirname, "data", "loot_results.csv");
         let importer = new csv_1.CSV();
         importer.import(targetPath);
-        let prevItemId;
-        let prevBossId;
-        let prevDungeonId;
-        let prevBossName = "";
-        let prevBossKills = 0;
-        let prevDungeonName = "";
-        let values = [];
-        let boss = new BossLoot();
-        let dungeonResult = new DungeonResult();
-        let start = 0;
-        let end = importer.header.length;
-        while (start < importer.data.length) {
-            const [dungeonId, dungeonName, bossId, bossName, bossKills, itemId, _itemName, _min, _mean, _median, _max, amount, count,] = importer.data.slice(start, end);
-            values.push([amount, count]);
-            if (prevItemId !== undefined && prevItemId !== itemId) {
-                boss.itemHistograms.set(prevItemId, new histogram_1.Histogram(values));
-                values = [];
-            }
-            if (prevBossId !== undefined && prevBossId !== bossId) {
-                boss.name = prevBossName;
-                boss.killCount = prevBossKills;
-                dungeonResult.bosses.set(prevBossId, boss);
-                boss = new BossLoot();
-            }
-            if (prevDungeonId !== undefined && prevDungeonId !== dungeonId) {
-                dungeonResult.name = prevDungeonName;
-                this.lootResults.set(prevDungeonId, dungeonResult);
-                dungeonResult = new DungeonResult();
-            }
-            prevDungeonId = dungeonId;
-            prevDungeonName = dungeonName;
-            prevBossId = bossId;
-            prevBossName = bossName;
-            prevBossKills = bossKills;
-            prevItemId = itemId;
-            start += importer.header.length;
-            end += importer.header.length;
-        }
-        if (prevItemId !== undefined) {
-            boss.itemHistograms.set(prevItemId, new histogram_1.Histogram(values));
-        }
-        if (prevBossId !== undefined) {
-            boss.name = prevBossName;
-            boss.killCount = prevBossKills;
-            dungeonResult.bosses.set(prevBossId, boss);
-        }
-        if (prevDungeonId !== undefined) {
-            dungeonResult.name = prevDungeonName;
-            this.lootResults.set(prevDungeonId, dungeonResult);
-        }
+        this.lootResults = (0, results_1.parseLootCSV)(importer.data, importer.header.length);
     }
     exportLootResults(outputPath) {
         const targetPath = outputPath
