@@ -224,9 +224,10 @@ class DataCollector implements HotReloadable<ReloadState> {
 
   private hookLoot() {
     this.mod.hook("S_SPAWN_NPC", "*", (event: S_SPAWN_NPC_12) => {
-      const name =
-        (this.mod.game.data as any).npcs?.get(event.templateId)?.name ?? "";
-      this.npcCache.set(event.gameId, { templateId: event.templateId, name });
+      this.npcCache.set(event.gameId, {
+        templateId: event.templateId,
+        name: event.npcName,
+      });
     });
 
     this.mod.hook("S_DESPAWN_NPC", "*", (event: S_DESPAWN_NPC_3) => {
