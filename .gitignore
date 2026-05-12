@@ -1,3 +1,4 @@
 node_modules/
 data/
 tera-toolbox-manifest-generator*
+module.config.json
