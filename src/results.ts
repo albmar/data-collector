@@ -12,7 +12,6 @@ export class BossLoot {
 }
 
 export class DungeonResult {
-  name: string = "";
   bosses = new Map<number, BossLoot>();
 }
 
@@ -96,7 +95,7 @@ export function parseLootCSV(
   while (start < data.length) {
     const [
       dungeonId,
-      dungeonName,
+      _dungeonName,
       bossId,
       bossName,
       bossKills,
@@ -123,7 +122,6 @@ export function parseLootCSV(
     }
 
     if (prevDungeonId !== undefined && prevDungeonId !== dungeonId) {
-      dungeonResult.name = prevDungeonName;
       lootResults.set(prevDungeonId, dungeonResult);
       dungeonResult = new DungeonResult();
     }
@@ -131,7 +129,6 @@ export function parseLootCSV(
     values.push([amount, count]);
 
     prevDungeonId = dungeonId;
-    prevDungeonName = dungeonName;
     prevBossId = bossId;
     prevBossName = bossName;
     prevBossKills = bossKills;
@@ -150,7 +147,6 @@ export function parseLootCSV(
     dungeonResult.bosses.set(prevBossId, boss);
   }
   if (prevDungeonId !== undefined) {
-    dungeonResult.name = prevDungeonName;
     lootResults.set(prevDungeonId, dungeonResult);
   }
 

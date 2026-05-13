@@ -104,6 +104,7 @@ class DataCollector implements HotReloadable<ReloadState> {
   lootResults: Map<DungeonId, DungeonResult> = new Map();
 
   currentDungeonId: DungeonId | null = null;
+  dungeonStrings: Map<number, string> = new Map();
   npcCache: Map<bigint, { templateId: TemplateId; name: string }> = new Map();
 
   loadState(state: ReloadState): ReloadState {
@@ -137,6 +138,8 @@ class DataCollector implements HotReloadable<ReloadState> {
     }
     mod.game.initialize("contract");
 
+    this.cacheQueryData();
+
     mod.command.add("data", {
       export: this.export.bind(this),
       show: {
@@ -154,6 +157,21 @@ class DataCollector implements HotReloadable<ReloadState> {
     this.hookLoot();
 
     mod.game.me.on("change_zone", this.onChangeZone.bind(this));
+  }
+
+  async cacheQueryData() {
+    var result = (await this.mod.queryData(
+      "/StrSheet_Dungeon/String",
+      null,
+      true,
+      false,
+    )) as DBElement[];
+    this.dungeonStrings = new Map(
+      result.map((ele) => [
+        (ele.attributes as DBString).id,
+        (ele.attributes as DBString).string,
+      ]),
+    );
   }
 
   hookGacha() {
@@ -378,16 +396,7 @@ class DataCollector implements HotReloadable<ReloadState> {
         this.lootResults.set(zone, new DungeonResult());
       }
 
-      var result = (await this.mod.queryData(
-        "/StrSheet_Dungeon/String@id=?",
-        [zone] as any,
-        false,
-        false,
-      )) as DBElement;
-      const dungeonName = (result?.attributes as DBString).string;
-      if (dungeonName) {
-        this.lootResults.get(zone)!.name = dungeonName;
-      }
+      const dungeonName = this.dungeonStrings.get(zone);
       this.mod.log(`dungeon: ${dungeonName} (${zone})`);
     } else {
       this.currentDungeonId = null;
@@ -492,12 +501,13 @@ class DataCollector implements HotReloadable<ReloadState> {
     exporter.addColumn("count");
 
     for (const [dungeonId, dungeonResult] of this.lootResults.entries()) {
+      const dungeonName = this.dungeonStrings.get(dungeonId);
       for (const [bossId, boss] of dungeonResult.bosses.entries()) {
         for (const [itemId, hist] of boss.itemHistograms.entries()) {
           const itemName = this.mod.game.data.items.get(itemId)?.name ?? "";
           for (const [amount, count] of hist.values.entries()) {
             exporter.addCell(dungeonId);
-            exporter.addCell(dungeonResult.name);
+            exporter.addCell(dungeonName);
             exporter.addCell(bossId);
             exporter.addCell(boss.name);
             exporter.addCell(boss.killCount);
@@ -519,7 +529,8 @@ class DataCollector implements HotReloadable<ReloadState> {
 
   showLootResults() {
     for (const [dungeonId, dungeonResult] of this.lootResults.entries()) {
-      this.mod.command.message(`${dungeonResult.name || dungeonId}:`);
+      const dungeonName = this.dungeonStrings.get(dungeonId);
+      this.mod.command.message(`${dungeonName || dungeonId}:`);
       for (const [bossId, boss] of dungeonResult.bosses.entries()) {
         this.mod.command.message(
           `  ${boss.name || bossId} (${boss.killCount} kills):`,
